@@ -1,0 +1,65 @@
+library(tidyverse)
+library(janitor)
+library(sf)
+library(RCurl)
+
+
+permits <- read_csv('https://data.cityofnewyork.us/resource/tg4x-b46p.csv?$limit=9999999')
+
+permits <- permits %>% 
+  separate_rows(parkingheld, sep = ', ') %>% 
+  separate(., parkingheld, c('main','cross_st_1'), sep = ' between ') %>% 
+  separate(., cross_st_1, c('cross_st_1', 'cross_st_2'), sep = ' and ')
+
+
+permits_test <- permits[1:10,]
+
+
+Gcode<-function(eventid,main,cross_st_1,cross_st_2, borough){
+  require(RCurl)
+  u1="https://api.cityofnewyork.us/geoclient/v1/blockface.json?app_id=d0d11f9a&app_key=bf8970fb9baa5946a4cdeef06c3e6d73&onStreet="
+  u2="&crossStreetOne="
+  u3="&crossStreetTwo="
+  u4= "&borough="
+  
+  
+  p1=main
+  p1=str_trim(p1)
+  p1=gsub("\\s{1,}","+",p1)
+  p2=cross_st_1
+  p2=str_trim(p2)
+  p2=gsub("\\s{1,}","+",p2)
+  p3=cross_st_2
+  p3=str_trim(p3)
+  p3=gsub("\\s{1,}","+",p3)
+  BR=borough
+  BR=str_trim(BR)
+  url=paste(c(u1,p1,u2,p2,u3,p3,u4,BR), sep = '', collapse = "")
+  TMP=getURL(url)
+
+  
+  xf=parse_number(strsplit(TMP,"(longitudeOfFromIntersection)|(longitudeOfToIntersection)")[[1]][2])
+  xt=parse_number(strsplit(TMP,"(longitudeOfToIntersection)|(lowCrossStreet)")[[1]][2])
+  yf=parse_number(strsplit(TMP,"(latitudeOfFromIntersection)|(latitudeOfToIntersection)")[[1]][2])
+  yt=parse_number(strsplit(TMP,"(latitudeOfToIntersection)|(leftSegment)")[[1]][2])
+  
+  #xf <- gsub("[^[:digit:]., ]", "", df$b)
+  
+  
+  XY=c(eventid, xf,xt,yf,yt)
+  names(XY)<-c("eventid","long_from","long_to","lat_from", "lat_to")
+  
+  return(XY)
+}
+
+
+locations_raw_output <- apply(permits, MARGIN = 1, function(x) Gcode(x['eventid'],x['main'], x['cross_st_1'], x['cross_st_2'], x['borough']))
+
+locations <- as_tibble(t(locations_raw_output))
+
+sum(!is.na(locations$long_from))/nrow(locations)
+
+
+
+write_csv(locations, 'film_permit_lcoations.csv')
+
