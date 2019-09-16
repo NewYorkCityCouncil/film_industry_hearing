@@ -2,7 +2,7 @@ library(tidyverse)
 library(sf)
 library(leaflet)
 
-geopermits <- read_csv('geopermits.csv') 
+geopermits <- read_csv('output_files/geopermits.csv') 
 
 geopermits <- geopermits %>% drop_na(c('long_from', 'lat_from', 'long_to', 'lat_to'))
 
@@ -12,13 +12,38 @@ geopermits$clat <- (geopermits$lat_from + geopermits$lat_to)/2
 geopermits <- st_as_sf(geopermits, coords = c("clong", "clat"))
 
 
+geopermits_2018 <- filter(permits, startdatetime < as.POSIXct('2019-01-01 00:00:00') & startdatetime >= as.POSIXct('2018-01-01 00:00:00'))
+
+geopermits_2018 <- st_as_sf(geopermits, coords = c("clong", "clat"))
 
 
 
+cds <- read_sf('community_districts/geo_export_3b2cd0ff-eff3-46ff-adc6-59ddc6430073.shp') %>% 
+  select(boro_cd, geometry) %>% 
+  st_set_crs(st_crs(geopermits_2018))
 
-leaflet(geopermits) %>%
+
+cds$num_permits <- lengths(st_intersects(cds,geopermits_2018))
+
+
+permit_pal <- colorBin(
+  palette = 'YlGnBu',
+  domain = cds$num_permits)
+
+permit_pop  <- paste0("Community District: ", cds$boro_cd, '<br>',
+                      "Number of Permits: ", cds$num_permits)
+
+
+leaflet(cds) %>%
   addProviderTiles('CartoDB.Positron') %>%
-  addCircleMarkers()
+  addPolygons(fillColor = ~permit_pal(cds$num_permits),
+              fillOpacity = .9,
+              weight = 3,
+              popup = permit_pop) %>% 
+  addLegend(position = "topleft",
+            pal = permit_pal,
+            values = cds$num_permits,
+            title = "Number of Permits by Community Disctrict, 2018")
 
 
 # geopermits_from <- geopermits %>% select(-one_of('lat_to', 'long_to')) %>% 

@@ -1,7 +1,7 @@
 library(tidyverse)
 library(chron)
 library(ggplot2)
-
+library(lubridate)
 
 permits_raw <- read_csv('https://data.cityofnewyork.us/resource/tg4x-b46p.csv?$limit=9999999')
 
@@ -112,8 +112,10 @@ func_date <- function(start_date, end_date) {
 
 #use only dataframe with complete years, to get accurate figures
 
-permits <- read_csv('permits.csv')
-permits_2018 <- filter(permits, startdatetime < as.POSIXct('2019-01-01 00:00:00'))
+permits <- read_csv('output_files/permits.csv')
+permits_2018 <- filter(permits, startdatetime < as.POSIXct('2019-01-01 00:00:00') & startdatetime >= as.POSIXct('2018-01-01 00:00:00'))
+
+permits_pre_19 <- filter(permits, startdatetime < as.POSIXct('2019-01-01 00:00:00'))
 
 
 # Repeat over dataframe, combine results for each of 366 intervals (includes leap year)
@@ -189,9 +191,19 @@ permits_2018$count <- 1
 top_streets <- aggregate(permits_2018$count,
                         by = list(main_street = permits_2018$main,
                                   cross_1 = permits_2018$cross_st_1,
-                                  cross_2 = permits_2018$cross_st_2),
+                                  cross_2 = permits_2018$cross_st_2,
+                                  borough = permits_2018$borough),
                         function(x) {sum(x)}) %>% 
   rename(num_permits = x) %>% 
-  arrange(desc(num_permits))
+  arrange(desc(num_permits)) %>% 
+  mutate(street = paste(main_street, cross_1, cross_2, borough))
 
 top_10 <- top_streets[1:10,]
+
+write_csv(top_10, 'output_files/top_10.csv')
+
+ggplot(top_10, aes(x = street, y = num_permits)) +
+  geom_col(fill="tomato3") +
+  xlab("Streets") + ylab("Number of Permits") +
+  ggtitle("Busiest Streets by Number of Permits, 2018") +
+  theme(axis.text.x = element_text(size = 12, angle = 45))
