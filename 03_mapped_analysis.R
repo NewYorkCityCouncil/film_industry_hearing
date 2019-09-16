@@ -67,7 +67,7 @@ zpermit_pal <- colorBin(
   palette = 'YlGnBu',
   domain = zips$num_permits)
 
-zpermit_pop  <- paste0("Community District: ", zips$zipcode, '<br>',
+zpermit_pop  <- paste0("Zipcode: ", zips$zipcode, '<br>',
                       "Number of Permits: ", zips$num_permits)
 
 
