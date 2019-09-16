@@ -190,4 +190,8 @@ top_streets <- aggregate(permits_2018$count,
                         by = list(main_street = permits_2018$main,
                                   cross_1 = permits_2018$cross_st_1,
                                   cross_2 = permits_2018$cross_st_2),
-                        function(x) {sum(x)})
+                        function(x) {sum(x)}) %>% 
+  rename(num_permits = x) %>% 
+  arrange(desc(num_permits))
+
+top_10 <- top_streets[1:10,]
