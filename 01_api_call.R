@@ -4,15 +4,16 @@ library(sf)
 library(RCurl)
 
 
-permits <- read_csv('https://data.cityofnewyork.us/resource/tg4x-b46p.csv?$limit=9999999')
+permits_raw <- read_csv('https://data.cityofnewyork.us/resource/tg4x-b46p.csv?$limit=9999999')
 
-permits <- permits %>% 
+permits <- permits_raw %>% 
   separate_rows(parkingheld, sep = ', ') %>% 
   separate(., parkingheld, c('main','cross_st_1'), sep = ' between ') %>% 
-  separate(., cross_st_1, c('cross_st_1', 'cross_st_2'), sep = ' and ')
+  separate(., cross_st_1, c('cross_st_1', 'cross_st_2'), sep = ' and ') %>% 
+  drop_na()
 
+write_csv(permits, 'permits.csv')
 
-permits_test <- permits[1:10,]
 
 
 Gcode<-function(eventid,main,cross_st_1,cross_st_2, borough){
@@ -36,7 +37,7 @@ Gcode<-function(eventid,main,cross_st_1,cross_st_2, borough){
   BR=str_trim(BR)
   url=paste(c(u1,p1,u2,p2,u3,p3,u4,BR), sep = '', collapse = "")
   TMP=getURL(url)
-
+  
   
   xf=parse_number(strsplit(TMP,"(longitudeOfFromIntersection)|(longitudeOfToIntersection)")[[1]][2])
   xt=parse_number(strsplit(TMP,"(longitudeOfToIntersection)|(lowCrossStreet)")[[1]][2])
@@ -46,16 +47,19 @@ Gcode<-function(eventid,main,cross_st_1,cross_st_2, borough){
   #xf <- gsub("[^[:digit:]., ]", "", df$b)
   
   
-  XY=c(eventid, xf,xt,yf,yt)
-  names(XY)<-c("eventid","long_from","long_to","lat_from", "lat_to")
+  XY=c(eventid, main, cross_st_1, cross_st_2, xf,xt,yf,yt)
+  names(XY)<-c("eventid", 'main', 'cross_st_1', 'cross_st_2', "long_from","long_to","lat_from", "lat_to")
   
   return(XY)
 }
 
 
+
 locations_raw_output <- apply(permits, MARGIN = 1, function(x) Gcode(x['eventid'],x['main'], x['cross_st_1'], x['cross_st_2'], x['borough']))
 
 locations <- as_tibble(t(locations_raw_output))
+
+locations$eventid <- as.numeric(locations$eventid)
 
 sum(!is.na(locations$long_from))/nrow(locations)
 
@@ -63,3 +67,7 @@ sum(!is.na(locations$long_from))/nrow(locations)
 
 write_csv(locations, 'film_permit_lcoations.csv')
 
+
+geopermits <- unique(left_join(permits, locations))
+
+write_csv(geopermits, "geopermits.csv")
