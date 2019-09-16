@@ -9,18 +9,22 @@ geopermits <- geopermits %>% drop_na(c('long_from', 'lat_from', 'long_to', 'lat_
 geopermits$clong <- (geopermits$long_from + geopermits$long_to)/2
 geopermits$clat <- (geopermits$lat_from + geopermits$lat_to)/2
 
-geopermits <- st_as_sf(geopermits, coords = c("clong", "clat"))
+geopermits <- st_as_sf(geopermits, coords = c("clong", "clat"), coords = '+proj=longlat +datum=WGS84')
 
 
-geopermits_2018 <- filter(permits, startdatetime < as.POSIXct('2019-01-01 00:00:00') & startdatetime >= as.POSIXct('2018-01-01 00:00:00'))
+geopermits_2018 <- filter(geopermits, startdatetime < as.POSIXct('2019-01-01 00:00:00') & startdatetime >= as.POSIXct('2018-01-01 00:00:00')) %>% 
+  st_set_crs('+proj=longlat +datum=WGS84')
 
-geopermits_2018 <- st_as_sf(geopermits, coords = c("clong", "clat"))
+
+
+
+# Map at CD Level ---------------------------------------------------------
 
 
 
 cds <- read_sf('community_districts/geo_export_3b2cd0ff-eff3-46ff-adc6-59ddc6430073.shp') %>% 
   select(boro_cd, geometry) %>% 
-  st_set_crs(st_crs(geopermits_2018))
+  st_transform(st_crs(geopermits_2018))
 
 
 cds$num_permits <- lengths(st_intersects(cds,geopermits_2018))
@@ -44,6 +48,39 @@ leaflet(cds) %>%
             pal = permit_pal,
             values = cds$num_permits,
             title = "Number of Permits by Community Disctrict, 2018")
+
+
+# Map at Zipcode Level ----------------------------------------------------
+
+zips <- read_sf('zip_code/ZIP_CODE_040114.shp') %>% 
+  janitor::clean_names() %>% 
+  select(zipcode, geometry) %>% 
+  st_transform('+proj=longlat +datum=WGS84')
+
+
+
+
+zips$num_permits <- lengths(st_intersects(zips,geopermits_2018))
+
+
+zpermit_pal <- colorBin(
+  palette = 'YlGnBu',
+  domain = zips$num_permits)
+
+zpermit_pop  <- paste0("Community District: ", zips$zipcode, '<br>',
+                      "Number of Permits: ", zips$num_permits)
+
+
+leaflet(zips) %>%
+  addProviderTiles('CartoDB.Positron') %>%
+  addPolygons(fillColor = ~zpermit_pal(zips$num_permits),
+              fillOpacity = .9,
+              weight = 3,
+              popup = zpermit_pop) %>% 
+  addLegend(position = "topleft",
+            pal = zpermit_pal,
+            values = zips$num_permits,
+            title = "Number of Permits by Zipcode, 2018")
 
 
 # geopermits_from <- geopermits %>% select(-one_of('lat_to', 'long_to')) %>% 
