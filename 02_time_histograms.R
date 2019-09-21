@@ -7,6 +7,7 @@ permits_raw <- read_csv('https://data.cityofnewyork.us/resource/tg4x-b46p.csv?$l
 
 
 
+
 # Create function to count occurrences of permits over time ---------------
 
 ## Using 96 for 24 hrs w 15 minute intervals
@@ -70,7 +71,6 @@ time_hist <- as_tibble(cbind(ttimes, all_times)) %>%
   rename(time = ttimes, num_active_permits = all_times) %>% 
   mutate(num_active_permits = as.numeric(num_active_permits))
 
-time_hist$time <- chron(time_hist$time)
 
 time_hrs_only <- time_hist[grep("00:00", time_hist$time),]
 time_hrs_only$hours <- 0:23
@@ -110,17 +110,66 @@ func_date <- function(start_date, end_date) {
   out
 }
 
-#use only dataframe with complete years, to get accurate figures
+
+# Adding manipulated, cleaned datasets ------------------------------------
+
 
 permits <- read_csv('output_files/permits.csv')
 permits_2018 <- filter(permits, startdatetime < as.POSIXct('2019-01-01 00:00:00') & startdatetime >= as.POSIXct('2018-01-01 00:00:00'))
 
-permits_pre_19 <- filter(permits, startdatetime < as.POSIXct('2019-01-01 00:00:00'))
+
+
+p12_15 <- filter(permits, startdatetime >= as.POSIXct('2012-01-01 00:00:00') & startdatetime < as.POSIXct('2016-01-01 00:00:00'))
+
+p16_18 <- filter(permits, startdatetime >= as.POSIXct('2016-01-01 00:00:00') & startdatetime < as.POSIXct('2019-01-01 00:00:00'))
+
+
+
+
+# YoY Analysis  --------------------------------------------------------------
+
+permits$count <- 1
+permits$year <- format(permits$startdatetime, '%Y')
+
+permits_raw$count <- 1
+permits_raw$year <- format(permits_raw$startdatetime, '%Y')
+
+permits_raw_pre_19 <- filter(permits_raw, startdatetime < as.POSIXct('2019-01-01 00:00:00') & enddatetime < as.POSIXct('2019-01-01 00:00:00'))
+
+permits_pre_19 <- filter(permits, startdatetime < as.POSIXct('2019-01-01 00:00:00') & enddatetime < as.POSIXct('2019-01-01 00:00:00'))
+
+
+yoy <- aggregate(permits_raw_pre_19$count,
+                 by = list(year = permits_raw_pre_19$year),
+                 function(x) {sum(x)}) %>% 
+  rename(num_permits = x)
+
+
+ggplot(data = yoy, aes(x=year, y=num_permits)) +
+  geom_col(fill="tomato3") +
+  xlab("Year") + ylab("Number of Permits") +
+  ggtitle("Number of Permits per Year")
+
+
+yoy_short <- yoy[yoy$year %in% c(2012, 2015, 2018),]
+
+ggplot(data = yoy_short, aes(x=year, y=num_permits)) +
+  geom_col(fill="tomato3") +
+  xlab("Year") + ylab("Number of Permits") +
+  ggtitle("Number of Permits per Year")
 
 
 # Repeat over dataframe, combine results for each of 366 intervals (includes leap year)
 days <- purrr::map2(permits_2018$startdatetime, permits_2018$enddatetime, func_date)
 all_days <- purrr::reduce(days, `+`, .init = rep(0, 366))
+
+# Repeat over dataframe, combine results for each of 366 intervals (includes leap year)
+days_12_15 <- purrr::map2(p12_15$startdatetime, p12_15$enddatetime, func_date)
+all_days_12_15 <- purrr::reduce(days_12_15, `+`, .init = rep(0, 366))
+
+# Repeat over dataframe, combine results for each of 366 intervals (includes leap year)
+days_16_18 <- purrr::map2(p16_18$startdatetime, p16_18$enddatetime, func_date)
+all_days_16_18 <- purrr::reduce(days_16_18, `+`, .init = rep(0, 366))
 
 #permits_raw[which(map_dbl(days, length) != 366),] %>% View()
 
@@ -154,14 +203,29 @@ date_month <- enframe(c(date_long,date_short,feb), name = NULL) %>%
   arrange(month) %>% 
   select(-order_char)
 
-date_month$permit_count <- all_days
+date_month$permit_count_18 <- all_days
+date_month$permit_count_16_18 <- all_days_16_18
+date_month$permit_count_12_15 <- all_days_12_15
+
 
 date_month$char_month <- gsub("([A-Za-z]+).*", "\\1", date_month$date)
 
-# Normalized -- divide by number of years in file
-##  2018-2012 == 7
+# Normalized -- divide by number of years in each column
 
-date_month$count_normalized <- date_month$permit_count/7
+date_month$count_normalized_12_15 <- date_month$permit_count_12_15/4
+date_month$count_normalized_16_18 <- date_month$permit_count_16_18
+
+
+
+dm_melt <- reshape2::melt(date_month[,c('month','count_normalized_12_15','count_normalized_16_18')],id.vars = 1)
+
+ggplot(dm_melt,aes(x = month,y = value)) + 
+  geom_bar(aes(fill = variable),stat = "identity",position = "dodge") +
+  xlab("Month") + ylab("Number of Permits") +
+  scale_fill_discrete(name = "Time Ranges", labels=c("2012-2015 (Avg.)", "2018")) +
+  ggtitle("Number of Permits by Month") +
+  scale_x_discrete(limits = c("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"))
+
 
 
 
@@ -201,6 +265,11 @@ top_streets <- aggregate(permits_2018$count,
 top_10 <- top_streets[1:10,]
 
 write_csv(top_10, 'output_files/top_10.csv')
+
+top_bronx <- top_streets[top_streets$borough=='Bronx',][1:3,]
+
+write_csv(top_bronx, 'output_files/top_bronx.csv')
+
 
 ggplot(top_10, aes(x = street, y = num_permits)) +
   geom_col(fill="tomato3") +

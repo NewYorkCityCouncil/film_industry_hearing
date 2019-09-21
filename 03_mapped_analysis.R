@@ -1,6 +1,7 @@
 library(tidyverse)
 library(sf)
 library(leaflet)
+library(data.table)
 
 geopermits <- read_csv('output_files/geopermits.csv') 
 
@@ -9,20 +10,18 @@ geopermits <- geopermits %>% drop_na(c('long_from', 'lat_from', 'long_to', 'lat_
 geopermits$clong <- (geopermits$long_from + geopermits$long_to)/2
 geopermits$clat <- (geopermits$lat_from + geopermits$lat_to)/2
 
-geopermits <- st_as_sf(geopermits, coords = c("clong", "clat"), coords = '+proj=longlat +datum=WGS84')
+geopermits <- st_as_sf(geopermits, coords = c("clong", "clat"), crs = '+proj=longlat +datum=WGS84')
 
 
 geopermits_2018 <- filter(geopermits, startdatetime < as.POSIXct('2019-01-01 00:00:00') & startdatetime >= as.POSIXct('2018-01-01 00:00:00')) %>% 
   st_set_crs('+proj=longlat +datum=WGS84')
 
 
-
-
 # Map at CD Level ---------------------------------------------------------
 
 
 
-cds <- read_sf('community_districts/geo_export_3b2cd0ff-eff3-46ff-adc6-59ddc6430073.shp') %>% 
+cds <- read_sf('input_files/community_districts/geo_export_3b2cd0ff-eff3-46ff-adc6-59ddc6430073.shp') %>% 
   select(boro_cd, geometry) %>% 
   st_transform(st_crs(geopermits_2018))
 
@@ -50,9 +49,13 @@ leaflet(cds) %>%
             title = "Number of Permits by Community Disctrict, 2018")
 
 
+
+
+
 # Map at Zipcode Level ----------------------------------------------------
 
-zips <- read_sf('zip_code/ZIP_CODE_040114.shp') %>% 
+
+zips <- read_sf('input_files/zip_code/ZIP_CODE_040114.shp') %>% 
   janitor::clean_names() %>% 
   select(zipcode, geometry) %>% 
   st_transform('+proj=longlat +datum=WGS84')
@@ -64,18 +67,19 @@ zips$num_permits <- lengths(st_intersects(zips,geopermits_2018))
 
 
 zpermit_pal <- colorBin(
-  palette = 'YlGnBu',
+  palette = RColorBrewer::brewer.pal(n = 9, name = 'YlOrRd'),
   domain = zips$num_permits)
 
 zpermit_pop  <- paste0("Zipcode: ", zips$zipcode, '<br>',
-                      "Number of Permits: ", zips$num_permits)
+                       "Number of Permits: ", zips$num_permits)
 
 
 leaflet(zips) %>%
+  setView(lng = -73.95, lat = 40.73, zoom = 11) %>%
   addProviderTiles('CartoDB.Positron') %>%
   addPolygons(fillColor = ~zpermit_pal(zips$num_permits),
               fillOpacity = .9,
-              weight = 3,
+              weight = 1,
               popup = zpermit_pop) %>% 
   addLegend(position = "topleft",
             pal = zpermit_pal,
@@ -83,59 +87,158 @@ leaflet(zips) %>%
             title = "Number of Permits by Zipcode, 2018")
 
 
-# geopermits_from <- geopermits %>% select(-one_of('lat_to', 'long_to')) %>% 
-#   rename(lat = lat_from, long = long_from) %>% 
-#   add_column(where = 'from')
-# 
-# geopermits_to <- geopermits %>% select(-one_of('lat_from', 'long_from')) %>% 
-#   rename(lat = lat_to, long = long_to) %>% 
-#   add_column(where = 'to')
-# 
-# geopermits_line <- rbind(geopermits_from, geopermits_to) %>% 
-#   arrange(eventid, main, cross_st_1, cross_st_2, where)
-# 
-# 
-# 
-# counter_func <- function(df, eventid, main, cross_st_1, cross_st_2) {
-#   combo <- c(df$eventid, df$main, df$cross_st_1, df$cross_st_2)
-#   return(combo)
-# }
-# 
-# 
-# out <- pmap(geopermits[17:20], ~
-#               c(...) %>%
-#               matrix(., , ncol=2, byrow = TRUE) %>% 
-#               st_linestring) %>%
-#   reduce(st_sfc) %>%
-#   mutate(geopermits, geometry = .)
-# 
-# 
-# test$unistrs <- paste(test$eventid, test$main, test$cross_st_1, test$cross_st_2)
-#     
-# 
-# 
-# 
-# test <- geopermits_line[1:5,]
-# 
-# test$ls <- st_linestring(c(rbind(c(test$long_from, test$lat_from),c(test$long_to, test$lat_to))))
-# 
-# multipoints <- st_multipoint(matrix(c(test$long_from, test$lat_from, test$long_to, test$lat_to), nrow = 2, byrow = TRUE), dim = "XY")
-# points <- st_cast(st_geometry(multipoints), 'POINT')
-# 
-# 
-# # Number of total linestrings to be created
-# n <- length(points) - 1
-# 
-# # Build linestrings
-# linestrings <- lapply(X = 1:n, FUN = function(x) {
-#   
-#   pair <- st_combine(c(points[x], points[x + 1]))
-#   line <- st_cast(pair, "LINESTRING")
-#   return(line)
-#   
-# })
-# 
-# # One MULTILINESTRING object with all the LINESTRINGS
-# multilinetring <- st_multilinestring(do.call("rbind", linestrings))
 
+
+
+
+# Adding 311 data ---------------------------------------------------------
+
+
+
+three11 <- read_csv('input_files/311_Service_Request2018.csv') %>% 
+  janitor::clean_names()
+
+three11 <- three11[!is.na(three11$latitude),]
+three11 <- three11[!is.na(three11$longitude),]
+
+geo311 <- st_as_sf(three11, coords = c('longitude', 'latitude'), crs = "+proj=longlat +datum=WGS84")
+
+top_10 <- read_csv('output_files/top_10.csv')
+
+
+# Make the buffered circle around geopermits_2018 permit locations
+
+geopermits_2018 <- geopermits_2018 %>% 
+  mutate(street = paste(main, cross_st_1, cross_st_2, borough))
+
+geo18_10 <- filter(geopermits_2018, grepl(paste(top_10$street, collapse = "|"), street))
+
+geo18_10$geometry <- geo18_10$geometry %>%
+  st_transform(3488) %>%  # Convert to a projection that has a real unit (not degrees)
+  # In this case it's Albers Equal Area (unit is meters)
+  st_buffer(dist = units::as_units(.2, "mile")) %>%  # Buffer 1 mile (sf handles units)
+  st_transform("+proj=longlat +datum=WGS84") # Unproject back to lat-lon
+
+
+
+
+# Spacial join of top 10 permits and complaints
+
+joined <- st_join(geo18_10,geo311)
+
+drops <- c('eventagency', 'borough.y', 'communityboard_s', 'policeprecinct_s',
+           'country', 'zipcode_s', "long_from", "long_to", "lat_from", "lat_to",
+           "main", "cross_st_1", "cross_st_2", "location_type", "incident_zip",
+           "incident_address", "street_name","cross_street_1", "cross_street_2",
+           "intersection_street_1", "intersection_street_2", "address_type",
+           "city", "landmark", "facility_type", "status", "due_date", 
+           "resolution_action_updated_date", "community_board", "bbl",
+           "x_coordinate_state_plane", "y_coordinate_state_plane", 
+           "open_data_channel_type", "park_facility_name", "park_borough", 
+           "vehicle_type", "taxi_company_borough", "taxi_pick_up_location", 
+           "bridge_highway_name", "bridge_highway_direction", "road_ramp", 
+           "bridge_highway_segment")
+
+
+joined <- joined %>% 
+  select(-one_of(drops))
+
+write_csv(joined, 'outputfiles/joined_311_permits.csv')
+
+
+# Confirming output has very few uniques, meaning there are so many
+# because output is each combination possible
+length(unique(west48$startdatetime))
+length(unique(west48$unique_key))
+
+
+west48 <- joined[joined$street %like% 'AVENUE 7 AVENUE Manhattan',]
+
+write_csv(west48, 'output_files/west48.csv')
+
+west48$created_date <- as.POSIXct(west48$created_date, format = "%m/%d/%Y %I:%M:%S %p")
+
+west48_nonsf <- west48 %>% 
+  select(eventid, startdatetime, enddatetime,created_date, unique_key) %>% 
+  mutate(geometry = NULL)
+
+west48_nonsf <- as.data.frame(west48_nonsf)
+
+west48_nonsf <- west48_nonsf %>% 
+  filter(as.POSIXct(created_date) >= startdatetime & created_date <= enddatetime) %>% 
+  mutate(key_id = paste(unique_key, eventid))
+
+west48 <- west48 %>% 
+  mutate(key_id = paste(unique_key, eventid)) %>% 
+  filter(key_id %in% west48_nonsf$key_id)
+
+write_csv(west48, 'output_files/west48.csv')
+
+'MONITOR STREET GREENPOINT AVENUE NORMAN AVENUE Brooklyn'
+
+monitor_gp <- joined[joined$street %like% 'MONITOR STREET GREENPOINT AVENUE',]
+
+write_csv(monitor_gp, 'output_files/monitor_gp.csv')
+
+monitor_gp$created_date <- as.POSIXct(monitor_gp$created_date, format = "%m/%d/%Y %I:%M:%S %p")
+
+sdt_mongp <- length(unique(monitor_gp$startdatetime))
+ukey_mongp <- length(unique(monitor_gp$unique_key))
+
+monitor_gp_nonsf <- monitor_gp %>% 
+  select(eventid, startdatetime, enddatetime,created_date, unique_key) %>% 
+  mutate(geometry = NULL)
+
+monitor_gp_nonsf <- as.data.frame(monitor_gp_nonsf)
+
+monitor_gp_nonsf <- monitor_gp_nonsf %>% 
+  filter(as.POSIXct(created_date) >= startdatetime & created_date <= enddatetime) %>% 
+  mutate(key_id = paste(unique_key, eventid))
+
+monitor_gp <- monitor_gp %>% 
+  mutate(key_id = paste(unique_key, eventid)) %>% 
+  filter(key_id %in% monitor_gp_nonsf$key_id)
+
+write_csv(monitor_gp, 'output_files/monitor_gp.csv')
+
+
+
+
+# Council District Comparison ---------------------------------------------
+
+coundis <- read_sf('input_files/council_districts/geo_export_8729b41f-14df-41c5-9542-2f46d543773b.shp')%>% 
+  select(coun_dist, geometry) %>% 
+  st_transform(st_crs(geopermits_2018)) %>% 
+  arrange(coun_dist)
+
+
+coundis$num_permits <- lengths(st_intersects(coundis,geopermits_2018))
+
+councheck <- st_intersects(coundis,geopermits_2018)
+cdholden <- unique(geopermits[councheck[[30]],]$eventid)
+
+
+
+
+
+
+
+permit_pal <- colorBin(
+  palette = 'YlGnBu',
+  domain = cds$num_permits)
+
+permit_pop  <- paste0("Community District: ", cds$boro_cd, '<br>',
+                      "Number of Permits: ", cds$num_permits)
+
+
+leaflet(cds) %>%
+  addProviderTiles('CartoDB.Positron') %>%
+  addPolygons(fillColor = ~permit_pal(cds$num_permits),
+              fillOpacity = .9,
+              weight = 3,
+              popup = permit_pop) %>% 
+  addLegend(position = "topleft",
+            pal = permit_pal,
+            values = cds$num_permits,
+            title = "Number of Permits by Community Disctrict, 2018")
 

@@ -61,6 +61,7 @@ locations <- as_tibble(t(locations_raw_output))
 
 locations$eventid <- as.numeric(locations$eventid)
 
+# Missingness Rate
 sum(!is.na(locations$long_from))/nrow(locations)
 
 
@@ -69,5 +70,13 @@ write_csv(locations, 'film_permit_lcoations.csv')
 
 
 geopermits <- unique(left_join(permits, locations))
+
+
+geopermits_2018 <- filter(permits, startdatetime >= as.POSIXct('2018-01-01 00:00:00') & startdatetime < as.POSIXct('2019-01-01 00:00:00'))
+
+# Missingness Rate 18
+sum(!is.na(geopermits_2018$long_from))/nrow(geopermits_2018)
+# None missing from 2018
+
 
 write_csv(geopermits, "geopermits.csv")
