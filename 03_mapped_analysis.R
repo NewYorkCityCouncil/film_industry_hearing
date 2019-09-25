@@ -67,7 +67,7 @@ zips$num_permits <- lengths(st_intersects(zips,geopermits_2018))
 
 
 zpermit_pal <- colorBin(
-  palette = RColorBrewer::brewer.pal(n = 9, name = 'YlOrRd'),
+  palette = 'Blues',
   domain = zips$num_permits)
 
 zpermit_pop  <- paste0("Zipcode: ", zips$zipcode, '<br>',
