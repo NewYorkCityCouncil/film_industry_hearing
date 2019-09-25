@@ -78,7 +78,7 @@ leaflet(zips) %>%
   setView(lng = -73.95, lat = 40.73, zoom = 11) %>%
   addProviderTiles('CartoDB.Positron') %>%
   addPolygons(fillColor = ~zpermit_pal(zips$num_permits),
-              color = '#2F56A6'
+              color = '#2F56A6',
               fillOpacity = .3,
               weight = 1,
               popup = zpermit_pop) %>% 
