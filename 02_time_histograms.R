@@ -163,6 +163,8 @@ ggplot(data = yoy_short, aes(x=year, y=num_permits)) +
 days <- purrr::map2(permits_2018$startdatetime, permits_2018$enddatetime, func_date)
 all_days <- purrr::reduce(days, `+`, .init = rep(0, 366))
 
+
+
 # Repeat over dataframe, combine results for each of 366 intervals (includes leap year)
 days_12_15 <- purrr::map2(p12_15$startdatetime, p12_15$enddatetime, func_date)
 all_days_12_15 <- purrr::reduce(days_12_15, `+`, .init = rep(0, 366))
@@ -170,6 +172,8 @@ all_days_12_15 <- purrr::reduce(days_12_15, `+`, .init = rep(0, 366))
 # Repeat over dataframe, combine results for each of 366 intervals (includes leap year)
 days_16_18 <- purrr::map2(p16_18$startdatetime, p16_18$enddatetime, func_date)
 all_days_16_18 <- purrr::reduce(days_16_18, `+`, .init = rep(0, 366))
+
+
 
 #permits_raw[which(map_dbl(days, length) != 366),] %>% View()
 
@@ -245,8 +249,88 @@ ggplot(date_month, aes(x=char_month, y=count_normalized)) +
 
 
 
- plot(all_days, type = "l")
+plot(all_days, type = "l")
+
+
  
+
+# Repeat analysis - raw numbers only --------------------------------------
+
+# this will eliminate additional permits caused creating new rows for multiple addresses.
+# this was executed in the "permits" dataset for geocoding purposes 
+permits_raw_18 <- filter(permits_raw, startdatetime < as.POSIXct('2019-01-01 00:00:00') & enddatetime < as.POSIXct('2019-01-01 00:00:00')
+                         & startdatetime >= as.POSIXct('2018-01-01 00:00:00'))
+
+permits_raw_15 <- filter(permits_raw, startdatetime < as.POSIXct('2016-01-01 00:00:00') & enddatetime < as.POSIXct('2016-01-01 00:00:00')
+                      & startdatetime >= as.POSIXct('2015-01-01 00:00:00'))
+
+permits_raw_12 <-  filter(permits_raw, startdatetime < as.POSIXct('2013-01-01 00:00:00') & enddatetime < as.POSIXct('2013-01-01 00:00:00')
+                      & startdatetime >= as.POSIXct('2012-01-01 00:00:00'))
+
+## RAW DOCUMENT
+# Repeat over dataframe, combine results for each of 366 intervals (includes leap year) 
+days_18_raw <- purrr::map2(permits_raw_18$startdatetime, permits_raw_18$enddatetime, func_date)
+all_days_18_raw <- purrr::reduce(days_18_raw, `+`, .init = rep(0, 366))
+
+# Repeat over dataframe, combine results for each of 366 intervals (includes leap year)
+days_15_raw <- purrr::map2(permits_raw_15$startdatetime, permits_raw_15$enddatetime, func_date)
+all_days_15_raw <- purrr::reduce(days_15_raw, `+`, .init = rep(0, 366))
+
+
+# Repeat over dataframe, combine results for each of 366 intervals (includes leap year)
+days_12_raw <- purrr::map2(permits_raw_12$startdatetime, permits_raw_12$enddatetime, func_date)
+all_days_12_raw <- purrr::reduce(days_12_raw, `+`, .init = rep(0, 366))
+
+
+#new dataframe of dates and months
+date_month_raw <- enframe(c(date_long,date_short,feb), name = NULL) %>% 
+  select(order_date = value) %>% 
+  mutate(order_date = str_replace(order_date, "\\s", "|")) %>% 
+  separate(order_date, into = c("order_char", "date"), sep = "\\|") %>% 
+  mutate(month = as.numeric(order_char)) %>% 
+  arrange(month) %>% 
+  select(-order_char)
+
+#add column with number of permits for each day of the year
+date_month_raw$permit_count18 <- all_days_18_raw
+date_month_raw$permit_count_15 <- all_days_15_raw
+date_month_raw$permit_count_12 <- all_days_12_raw
+
+# convert month to only alphabetical char, remove numbers and spaces, leaving only text
+date_month_raw$char_month <- gsub("([A-Za-z]+).*", "\\1", date_month_raw$date)
+
+#pull out unnecessary lines, melt the three permit count columns into 1
+dm_raw_melt <- reshape2::melt(date_month_raw[,c('month','permit_count18','permit_count_15','permit_count_12')],id.vars = 1) %>% 
+  rename(year = variable) %>% 
+  mutate(year = as.numeric(gsub('[a-z*_a-z*]', '', year))+2000)
+
+#aggregate by permit column
+dm_raw_agg <- aggregate(dm_raw_melt$value,
+                        by = list(month = dm_raw_melt$month,
+                                  year = dm_raw_melt$year),
+                        function(value) {sum(value)})
+
+write_csv(dm_raw_agg, 'date_month_permit_count.csv')
+
+dm_raw_agg_year <- aggregate(dm_raw_melt$value,
+                        by = list(year = dm_raw_melt$year),
+                        function(value) {sum(value)})
+
+write_csv(dm_raw_agg_year, 'year_permit_count.csv')
+
+
+
+
+# Quick count of instances by borough, 2018 -------------------------------
+
+count_by_boro <- aggregate(permits_raw_18$count,
+                           by = list(year = permits_raw_18$year,
+                                     borough = permits_raw_18$borough),
+                           function(count) {sum(count)})
+
+write_csv(count_by_boro, 'permits_by_boro_18.csv')
+
+
 
 # Top streets -------------------------------------------------------------
 
