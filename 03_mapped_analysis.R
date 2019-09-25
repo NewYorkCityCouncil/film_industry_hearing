@@ -104,8 +104,19 @@ three11 <- three11[!is.na(three11$longitude),]
 
 geo311 <- st_as_sf(three11, coords = c('longitude', 'latitude'), crs = "+proj=longlat +datum=WGS84")
 
-top_10 <- read_csv('output_files/top_10.csv')
+permits_2018$count <- 1
 
+top_streets <- aggregate(permits_2018$count,
+                         by = list(main_street = permits_2018$main,
+                                   cross_1 = permits_2018$cross_st_1,
+                                   cross_2 = permits_2018$cross_st_2,
+                                   borough = permits_2018$borough),
+                         function(x) {sum(x)}) %>% 
+  rename(num_permits = x) %>% 
+  arrange(desc(num_permits)) %>% 
+  mutate(street = paste(main_street, cross_1, cross_2, borough))
+
+top_10 <- top_streets[1:10,]
 
 # Make the buffered circle around geopermits_2018 permit locations
 
@@ -243,3 +254,10 @@ leaflet(cds) %>%
             values = cds$num_permits,
             title = "Number of Permits by Community Disctrict, 2018")
 
+
+
+
+# Top 50 ------------------------------------------------------------------
+
+
+top_50 <- 
